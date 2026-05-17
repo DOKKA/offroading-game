@@ -424,7 +424,7 @@
         updateChunks(truck.position.x, truck.position.z);
 
         // Camera
-        const camOffset = new THREE.Vector3(0, 5, -10);
+        const camOffset = new THREE.Vector3(0, 7, -10);
         camOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), truckRotation);
         const camTarget = truck.position.clone().add(camOffset);
         camTarget.y = Math.max(camTarget.y, getGroundHeight(camTarget.x, camTarget.z) + 2);
