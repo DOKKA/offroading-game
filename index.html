@@ -283,7 +283,7 @@
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
         masterGain = audioCtx.createGain();
-        masterGain.gain.value = 0.125;
+        masterGain.gain.value = 0.0625;
         masterGain.connect(audioCtx.destination);
 
         // Main engine tone — low sawtooth for that rough combustion sound
