@@ -143,6 +143,16 @@
         return s1 + s2 + s3;
     }
 
+    function terrainNoise(x, z) {
+        return (Math.sin(x * 0.15 + 2.7) * Math.cos(z * 0.13 + 1.2) * 0.5
+              + Math.sin(x * 0.37 + 5.1) * Math.cos(z * 0.41 + 3.8) * 0.3
+              + Math.sin(x * 0.71 + 0.3) * Math.cos(z * 0.63 + 7.2) * 0.2) * 0.5 + 0.5;
+    }
+
+    const brown = new THREE.Color(0.55, 0.40, 0.10);
+    const green = new THREE.Color(0.30, 0.50, 0.15);
+    const darkBrown = new THREE.Color(0.40, 0.28, 0.08);
+
     function createChunk(chunkX, chunkZ) {
         const key = `${chunkX},${chunkZ}`;
         if (chunks.has(key)) return;
@@ -150,15 +160,26 @@
         const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGMENTS, CHUNK_SEGMENTS);
         geo.rotateX(-Math.PI / 2);
         const positions = geo.attributes.position;
+        const colors = new Float32Array(positions.count * 3);
 
         for (let i = 0; i < positions.count; i++) {
             const x = positions.getX(i) + chunkX * CHUNK_SIZE;
             const z = positions.getZ(i) + chunkZ * CHUNK_SIZE;
             positions.setY(i, getTerrainHeight(x, z));
+
+            const n = terrainNoise(x, z);
+            const c = new THREE.Color();
+            if (n < 0.4) c.copy(brown).lerp(darkBrown, n / 0.4);
+            else if (n < 0.6) c.copy(brown).lerp(green, (n - 0.4) / 0.2);
+            else c.copy(green).lerp(darkBrown, (n - 0.6) / 0.4 * 0.3);
+            colors[i * 3] = c.r;
+            colors[i * 3 + 1] = c.g;
+            colors[i * 3 + 2] = c.b;
         }
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         geo.computeVertexNormals();
 
-        const mat = new THREE.MeshLambertMaterial({ color: 0x8B6914 });
+        const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
         const mesh = new THREE.Mesh(geo, mat);
         mesh.position.set(chunkX * CHUNK_SIZE, 0, chunkZ * CHUNK_SIZE);
         mesh.receiveShadow = true;
