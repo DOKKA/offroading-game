@@ -276,10 +276,19 @@
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
 
+    const chordProgression = [
+        [261.63, 329.63, 392.00],  // C  (C4 E4 G4)
+        [349.23, 440.00, 523.25],  // F  (F4 A4 C5)
+        [392.00, 493.88, 587.33],  // G  (G4 B4 D5)
+        [220.00, 261.63, 329.63],  // Am (A3 C4 E4)
+    ];
+    let chordIndex = 0;
+
     function playChord() {
         if (!audioCtx) return;
         if (audioCtx.state === 'suspended') audioCtx.resume();
-        const notes = [261.63, 329.63, 392.00]; // C4, E4, G4
+        const notes = chordProgression[chordIndex];
+        chordIndex = (chordIndex + 1) % chordProgression.length;
         notes.forEach(freq => {
             const osc = audioCtx.createOscillator();
             osc.type = 'triangle';
