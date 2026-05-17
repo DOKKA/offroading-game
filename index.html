@@ -402,6 +402,24 @@
             w.rotation.x += speed * dt * 2;
         });
 
+        // Sphere collision
+        const truckPos = truck.position;
+        for (const [key, chunk] of chunks) {
+            const spheres = chunk.spheres;
+            for (let i = spheres.children.length - 1; i >= 0; i--) {
+                const s = spheres.children[i];
+                const wx = s.position.x + spheres.position.x;
+                const wz = s.position.z + spheres.position.z;
+                const dx = truckPos.x - wx;
+                const dz = truckPos.z - wz;
+                if (dx * dx + dz * dz < 4) {
+                    bodyMat.color.copy(s.material.color);
+                    s.material.dispose();
+                    spheres.remove(s);
+                }
+            }
+        }
+
         // Update chunks
         updateChunks(truck.position.x, truck.position.z);
 
