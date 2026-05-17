@@ -268,92 +268,17 @@
     const FRICTION = 3;
     const STEER_SPEED = 2.5;
 
-    // Engine sound (single-cylinder lawnmower)
+    // Audio
     let audioCtx = null;
-    let engineOsc = null;
-    let engineGain = null;
-    let puttOsc = null;
-    let puttGain = null;
-    let engineNoise = null;
-    let noiseGain = null;
-    let masterGain = null;
 
     function initAudio() {
         if (audioCtx) return;
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-        masterGain = audioCtx.createGain();
-        masterGain.gain.value = 0.0625;
-        masterGain.connect(audioCtx.destination);
-
-        // Main engine tone — low sawtooth for that rough combustion sound
-        engineOsc = audioCtx.createOscillator();
-        engineOsc.type = 'sawtooth';
-        engineOsc.frequency.value = 55;
-
-        // Pulse oscillator to chop the tone into putt-putt firing pattern
-        puttOsc = audioCtx.createOscillator();
-        puttOsc.type = 'square';
-        puttOsc.frequency.value = 25;
-        puttGain = audioCtx.createGain();
-        puttGain.gain.value = 0.5;
-        puttOsc.connect(puttGain);
-
-        engineGain = audioCtx.createGain();
-        engineGain.gain.value = 0;
-
-        // Distortion for grit
-        const distortion = audioCtx.createWaveShaper();
-        const curve = new Float32Array(256);
-        for (let i = 0; i < 256; i++) {
-            const x = (i * 2) / 256 - 1;
-            curve[i] = Math.sign(x) * Math.pow(Math.abs(x), 0.4);
-        }
-        distortion.curve = curve;
-
-        // Second harmonic for body
-        const engineOsc2 = audioCtx.createOscillator();
-        engineOsc2.type = 'square';
-        engineOsc2.frequency.value = 110;
-        const osc2Gain = audioCtx.createGain();
-        osc2Gain.gain.value = 0.3;
-        engineOsc2.connect(osc2Gain);
-        osc2Gain.connect(engineGain);
-        engineOsc2.start();
-        // Store so we can update its frequency
-        engineOsc._osc2 = engineOsc2;
-
-        engineOsc.connect(engineGain);
-        // Modulate engine gain with the putt oscillator
-        puttGain.connect(engineGain.gain);
-        engineGain.connect(distortion);
-        distortion.connect(masterGain);
-
-        engineOsc.start();
-        puttOsc.start();
-
-        // Exhaust noise
-        const bufferSize = audioCtx.sampleRate * 2;
-        const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-        const output = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
-        engineNoise = audioCtx.createBufferSource();
-        engineNoise.buffer = noiseBuffer;
-        engineNoise.loop = true;
-        noiseGain = audioCtx.createGain();
-        noiseGain.gain.value = 0;
-        // Low-pass the noise for a muffled exhaust
-        const noiseLPF = audioCtx.createBiquadFilter();
-        noiseLPF.type = 'lowpass';
-        noiseLPF.frequency.value = 400;
-        engineNoise.connect(noiseLPF);
-        noiseLPF.connect(noiseGain);
-        noiseGain.connect(masterGain);
-        engineNoise.start();
     }
 
     function playChord() {
         if (!audioCtx) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         const notes = [261.63, 329.63, 392.00]; // C4, E4, G4
         notes.forEach(freq => {
             const osc = audioCtx.createOscillator();
@@ -367,25 +292,6 @@
             osc.start();
             osc.stop(audioCtx.currentTime + 0.6);
         });
-    }
-
-    function updateEngineSound(spd, gas) {
-        if (!audioCtx) return;
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        const absSpeed = Math.abs(spd);
-        const t = absSpeed / MAX_SPEED;
-        // Firing frequency: ~25Hz idle to ~55Hz full throttle
-        const firingFreq = 25 + t * 30;
-        puttOsc.frequency.setTargetAtTime(firingFreq, audioCtx.currentTime, 0.08);
-        // Engine tone follows firing freq with harmonics
-        const baseFreq = 55 + t * 80;
-        engineOsc.frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.08);
-        engineOsc._osc2.frequency.setTargetAtTime(baseFreq * 2, audioCtx.currentTime, 0.08);
-        // Volume
-        const vol = gas ? 0.4 + t * 0.3 : (absSpeed > 0.5 ? 0.15 : 0);
-        engineGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
-        const nv = gas ? 0.06 + t * 0.04 : (absSpeed > 0.5 ? 0.02 : 0);
-        noiseGain.gain.setTargetAtTime(nv, audioCtx.currentTime, 0.1);
     }
 
     // Controls state
@@ -568,9 +474,6 @@
         dirLight.position.set(truck.position.x + 30, 50, truck.position.z + 30);
         dirLight.target.position.copy(truck.position);
         dirLight.target.updateMatrixWorld();
-
-        // Engine sound
-        updateEngineSound(speed, gasPressed || reversePressed);
 
         // HUD
         const displaySpeed = Math.abs(Math.round(speed * 3.6));
