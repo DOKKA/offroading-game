@@ -154,19 +154,21 @@
         chunks.set(key, mesh);
     }
 
-    function updateChunks(truckZ) {
+    function updateChunks(truckX, truckZ) {
+        const currentChunkX = Math.round(truckX / CHUNK_SIZE);
         const currentChunkZ = Math.round(truckZ / CHUNK_SIZE);
-        const currentChunkX = 0;
+        const RANGE = 5;
 
         for (let dz = -CHUNKS_BEHIND; dz <= CHUNKS_AHEAD; dz++) {
-            for (let dx = -2; dx <= 2; dx++) {
+            for (let dx = -RANGE; dx <= RANGE; dx++) {
                 createChunk(currentChunkX + dx, currentChunkZ + dz);
             }
         }
 
         for (const [key, mesh] of chunks) {
             const [cx, cz] = key.split(',').map(Number);
-            if (Math.abs(cz - currentChunkZ) > CHUNKS_BEHIND + 2) {
+            if (Math.abs(cz - currentChunkZ) > CHUNKS_BEHIND + 2 ||
+                Math.abs(cx - currentChunkX) > RANGE + 2) {
                 scene.remove(mesh);
                 mesh.geometry.dispose();
                 mesh.material.dispose();
@@ -373,7 +375,7 @@
         });
 
         // Update chunks
-        updateChunks(truck.position.z);
+        updateChunks(truck.position.x, truck.position.z);
 
         // Camera
         const camOffset = new THREE.Vector3(0, 5, -10);
@@ -403,7 +405,7 @@
     });
 
     // Initial chunks
-    updateChunks(0);
+    updateChunks(0, 0);
     animate();
     </script>
 </body>
