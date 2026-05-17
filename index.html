@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Offroad Truck</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            overflow: hidden;
+            touch-action: none;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        #game { width: 100vw; height: 100vh; display: block; }
+        #controls {
+            position: fixed;
+            bottom: 30px;
+            left: 0; right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            padding: 0 20px;
+            z-index: 10;
+        }
+        .btn {
+            width: 80px;
+            height: 60px;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            opacity: 0.85;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn:active { opacity: 1; transform: scale(0.95); }
+        #btnGo { background: #2ecc40; }
+        #btnBrake { background: #ff4136; }
+        #btnReverse { background: #ff851b; }
+        #hud {
+            position: fixed;
+            top: 50px;
+            left: 20px;
+            color: #fff;
+            font-size: 16px;
+            z-index: 10;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+        #tilt-prompt {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 18px;
+            text-align: center;
+            z-index: 20;
+            background: rgba(0,0,0,0.7);
+            padding: 20px 30px;
+            border-radius: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game"></canvas>
+    <div id="hud">
+        <div id="speed-display">Speed: 0 km/h</div>
+    </div>
+    <div id="controls">
+        <button class="btn" id="btnReverse">REV</button>
+        <button class="btn" id="btnBrake">BRAKE</button>
+        <button class="btn" id="btnGo">GO</button>
+    </div>
+    <div id="tilt-prompt">Tap to enable motion controls<br><small>Tilt phone left/right to steer</small></div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+    <script type="module">
+    import * as THREE from 'three';
+
+    const canvas = document.getElementById('game');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
+    scene.fog = new THREE.Fog(0x87ceeb, 80, 200);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(30, 50, 30);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(1024, 1024);
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 150;
+    dirLight.shadow.camera.left = -60;
+    dirLight.shadow.camera.right = 60;
+    dirLight.shadow.camera.top = 60;
+    dirLight.shadow.camera.bottom = -60;
+    scene.add(dirLight);
+
+    // Terrain
+    const CHUNK_SIZE = 40;
+    const CHUNK_SEGMENTS = 40;
+    const CHUNKS_AHEAD = 5;
+    const CHUNKS_BEHIND = 2;
+    const chunks = new Map();
+
+    function getTerrainHeight(x, z) {
+        const s1 = Math.sin(x * 0.05) * Math.cos(z * 0.05) * 3;
+        const s2 = Math.sin(x * 0.12 + 1.5) * Math.cos(z * 0.08 + 0.7) * 1.5;
+        const s3 = Math.sin(x * 0.25 + 3.0) * Math.cos(z * 0.3 + 2.0) * 0.5;
+        return s1 + s2 + s3;
+    }
+
+    function createChunk(chunkX, chunkZ) {
+        const key = `${chunkX},${chunkZ}`;
+        if (chunks.has(key)) return;
+
+        const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGMENTS, CHUNK_SEGMENTS);
+        geo.rotateX(-Math.PI / 2);
+        const positions = geo.attributes.position;
+
+        for (let i = 0; i < positions.count; i++) {
+            const x = positions.getX(i) + chunkX * CHUNK_SIZE;
+            const z = positions.getZ(i) + chunkZ * CHUNK_SIZE;
+            positions.setY(i, getTerrainHeight(x, z));
+        }
+        geo.computeVertexNormals();
+
+        const mat = new THREE.MeshLambertMaterial({ color: 0x8B6914 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(chunkX * CHUNK_SIZE, 0, chunkZ * CHUNK_SIZE);
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        chunks.set(key, mesh);
+    }
+
+    function updateChunks(truckZ) {
+        const currentChunkZ = Math.round(truckZ / CHUNK_SIZE);
+        const currentChunkX = 0;
+
+        for (let dz = -CHUNKS_BEHIND; dz <= CHUNKS_AHEAD; dz++) {
+            for (let dx = -2; dx <= 2; dx++) {
+                createChunk(currentChunkX + dx, currentChunkZ + dz);
+            }
+        }
+
+        for (const [key, mesh] of chunks) {
+            const [cx, cz] = key.split(',').map(Number);
+            if (Math.abs(cz - currentChunkZ) > CHUNKS_BEHIND + 2) {
+                scene.remove(mesh);
+                mesh.geometry.dispose();
+                mesh.material.dispose();
+                chunks.delete(key);
+            }
+        }
+    }
+
+    // Truck
+    const truck = new THREE.Group();
+
+    // Body
+    const bodyGeo = new THREE.BoxGeometry(2, 1, 3.5);
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0xcc3333 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 1.2;
+    body.castShadow = true;
+    truck.add(body);
+
+    // Cab
+    const cabGeo = new THREE.BoxGeometry(1.8, 0.9, 1.5);
+    const cabMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+    const cab = new THREE.Mesh(cabGeo, cabMat);
+    cab.position.set(0, 2.0, -0.5);
+    cab.castShadow = true;
+    truck.add(cab);
+
+    // Wheels
+    const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12);
+    const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    const wheelPositions = [
+        [-1.1, 0.5, 1.0],
+        [1.1, 0.5, 1.0],
+        [-1.1, 0.5, -1.0],
+        [1.1, 0.5, -1.0]
+    ];
+    const wheels = [];
+    wheelPositions.forEach(([x, y, z]) => {
+        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(x, y, z);
+        wheel.castShadow = true;
+        truck.add(wheel);
+        wheels.push(wheel);
+    });
+
+    truck.position.set(0, 0, 0);
+    scene.add(truck);
+
+    // Physics state
+    let speed = 0;
+    let steerAngle = 0;
+    let truckRotation = 0;
+    const MAX_SPEED = 30;
+    const ACCELERATION = 12;
+    const BRAKE_FORCE = 20;
+    const FRICTION = 3;
+    const STEER_SPEED = 2.5;
+
+    // Controls state
+    let gasPressed = false;
+    let brakePressed = false;
+    let reversePressed = false;
+    let tiltX = 0;
+    let motionEnabled = false;
+
+    // Button events
+    function addButtonEvents(btn, onDown, onUp) {
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); onDown(); });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); onUp(); });
+        btn.addEventListener('mousedown', onDown);
+        btn.addEventListener('mouseup', onUp);
+        btn.addEventListener('mouseleave', onUp);
+    }
+
+    addButtonEvents(document.getElementById('btnGo'),
+        () => gasPressed = true, () => gasPressed = false);
+    addButtonEvents(document.getElementById('btnBrake'),
+        () => brakePressed = true, () => brakePressed = false);
+    addButtonEvents(document.getElementById('btnReverse'),
+        () => reversePressed = true, () => reversePressed = false);
+
+    // Accelerometer
+    const tiltPrompt = document.getElementById('tilt-prompt');
+
+    if (window.DeviceOrientationEvent) {
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            tiltPrompt.style.display = 'block';
+            tiltPrompt.addEventListener('click', async () => {
+                try {
+                    const perm = await DeviceOrientationEvent.requestPermission();
+                    if (perm === 'granted') {
+                        motionEnabled = true;
+                        window.addEventListener('deviceorientation', handleOrientation);
+                    }
+                } catch (e) {}
+                tiltPrompt.style.display = 'none';
+            });
+        } else {
+            motionEnabled = true;
+            window.addEventListener('deviceorientation', handleOrientation);
+        }
+    }
+
+    function handleOrientation(e) {
+        if (e.gamma !== null) {
+            tiltX = THREE.MathUtils.clamp(e.gamma / 30, -1, 1);
+        }
+    }
+
+    // Fallback: touch steering on left side of screen
+    let touchSteer = 0;
+    canvas.addEventListener('touchstart', handleTouchSteer);
+    canvas.addEventListener('touchmove', handleTouchSteer);
+    canvas.addEventListener('touchend', () => touchSteer = 0);
+
+    function handleTouchSteer(e) {
+        if (!motionEnabled) {
+            const touch = e.touches[0];
+            if (touch && touch.clientY < window.innerHeight * 0.6) {
+                const centerX = window.innerWidth / 2;
+                touchSteer = THREE.MathUtils.clamp((touch.clientX - centerX) / (window.innerWidth * 0.3), -1, 1);
+            }
+        }
+    }
+
+    // Game loop
+    const clock = new THREE.Clock();
+    const speedDisplay = document.getElementById('speed-display');
+
+    function getGroundHeight(x, z) {
+        return getTerrainHeight(x, z);
+    }
+
+    function getGroundNormal(x, z) {
+        const delta = 0.5;
+        const hL = getTerrainHeight(x - delta, z);
+        const hR = getTerrainHeight(x + delta, z);
+        const hF = getTerrainHeight(x, z - delta);
+        const hB = getTerrainHeight(x, z + delta);
+        const normal = new THREE.Vector3(hL - hR, 2 * delta, hF - hB).normalize();
+        return normal;
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        const dt = Math.min(clock.getDelta(), 0.05);
+
+        // Steering input
+        const steerInput = motionEnabled ? -tiltX : -touchSteer;
+        steerAngle = steerInput * STEER_SPEED;
+
+        // Acceleration
+        if (gasPressed) {
+            speed += ACCELERATION * dt;
+        } else if (reversePressed) {
+            speed -= ACCELERATION * 0.6 * dt;
+        }
+
+        if (brakePressed) {
+            if (speed > 0) speed -= BRAKE_FORCE * dt;
+            else if (speed < 0) speed += BRAKE_FORCE * dt;
+            if (Math.abs(speed) < 0.5) speed = 0;
+        }
+
+        // Friction
+        if (!gasPressed && !reversePressed && !brakePressed) {
+            if (speed > 0) speed = Math.max(0, speed - FRICTION * dt);
+            else if (speed < 0) speed = Math.min(0, speed + FRICTION * dt);
+        }
+
+        speed = THREE.MathUtils.clamp(speed, -MAX_SPEED * 0.4, MAX_SPEED);
+
+        // Turning
+        if (Math.abs(speed) > 0.1) {
+            truckRotation += steerAngle * dt * (speed / MAX_SPEED) * 2;
+        }
+
+        // Move truck
+        const moveX = Math.sin(truckRotation) * speed * dt;
+        const moveZ = Math.cos(truckRotation) * speed * dt;
+        truck.position.x += moveX;
+        truck.position.z += moveZ;
+
+        // Ground following
+        const groundY = getGroundHeight(truck.position.x, truck.position.z);
+        truck.position.y = groundY + 0.3;
+
+        // Tilt truck to match terrain
+        const normal = getGroundNormal(truck.position.x, truck.position.z);
+        const up = new THREE.Vector3(0, 1, 0);
+        const quat = new THREE.Quaternion().setFromUnitVectors(up, normal);
+        const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), truckRotation);
+        truck.quaternion.copy(yawQuat).premultiply(quat);
+
+        // Spin wheels
+        wheels.forEach(w => {
+            w.rotation.x += speed * dt * 2;
+        });
+
+        // Update chunks
+        updateChunks(truck.position.z);
+
+        // Camera
+        const camOffset = new THREE.Vector3(0, 5, -10);
+        camOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), truckRotation);
+        const camTarget = truck.position.clone().add(camOffset);
+        camTarget.y = Math.max(camTarget.y, getGroundHeight(camTarget.x, camTarget.z) + 2);
+        camera.position.lerp(camTarget, 4 * dt);
+        camera.lookAt(truck.position.x, truck.position.y + 1.5, truck.position.z);
+
+        // Move directional light with truck
+        dirLight.position.set(truck.position.x + 30, 50, truck.position.z + 30);
+        dirLight.target.position.copy(truck.position);
+        dirLight.target.updateMatrixWorld();
+
+        // HUD
+        const displaySpeed = Math.abs(Math.round(speed * 3.6));
+        speedDisplay.textContent = `Speed: ${displaySpeed} km/h`;
+
+        renderer.render(scene, camera);
+    }
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Initial chunks
+    updateChunks(0);
+    animate();
+    </script>
+</body>
+</html>
