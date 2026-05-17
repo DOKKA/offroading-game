@@ -323,7 +323,7 @@
         const dt = Math.min(clock.getDelta(), 0.05);
 
         // Steering input
-        const steerInput = motionEnabled ? -tiltX : -touchSteer;
+        const steerInput = motionEnabled ? tiltX : -touchSteer;
         steerAngle = steerInput * STEER_SPEED;
 
         // Acceleration
