@@ -352,6 +352,23 @@
         engineNoise.start();
     }
 
+    function playChord() {
+        if (!audioCtx) return;
+        const notes = [261.63, 329.63, 392.00]; // C4, E4, G4
+        notes.forEach(freq => {
+            const osc = audioCtx.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.value = freq;
+            const g = audioCtx.createGain();
+            g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.6);
+        });
+    }
+
     function updateEngineSound(spd, gas) {
         if (!audioCtx) return;
         if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -531,6 +548,7 @@
                     bodyMat.color.copy(s.material.color);
                     s.material.dispose();
                     spheres.remove(s);
+                    playChord();
                 }
             }
         }
