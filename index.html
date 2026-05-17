@@ -268,6 +268,63 @@
     const FRICTION = 3;
     const STEER_SPEED = 2.5;
 
+    // Engine sound (NES Excitebike style)
+    let audioCtx = null;
+    let engineOsc = null;
+    let engineGain = null;
+    let engineNoise = null;
+    let noiseGain = null;
+
+    function initAudio() {
+        if (audioCtx) return;
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        engineOsc = audioCtx.createOscillator();
+        engineOsc.type = 'square';
+        engineOsc.frequency.value = 80;
+
+        engineGain = audioCtx.createGain();
+        engineGain.gain.value = 0;
+
+        const distortion = audioCtx.createWaveShaper();
+        const curve = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+            const x = (i * 2) / 256 - 1;
+            curve[i] = Math.tanh(x * 3);
+        }
+        distortion.curve = curve;
+
+        engineOsc.connect(distortion);
+        distortion.connect(engineGain);
+        engineGain.connect(audioCtx.destination);
+        engineOsc.start();
+
+        const bufferSize = audioCtx.sampleRate * 2;
+        const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+        engineNoise = audioCtx.createBufferSource();
+        engineNoise.buffer = noiseBuffer;
+        engineNoise.loop = true;
+        noiseGain = audioCtx.createGain();
+        noiseGain.gain.value = 0;
+        engineNoise.connect(noiseGain);
+        noiseGain.connect(audioCtx.destination);
+        engineNoise.start();
+    }
+
+    function updateEngineSound(spd, gas) {
+        if (!audioCtx) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const absSpeed = Math.abs(spd);
+        const freq = 80 + (absSpeed / MAX_SPEED) * 200;
+        engineOsc.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
+        const vol = gas ? 0.12 + (absSpeed / MAX_SPEED) * 0.08 : (absSpeed > 0.5 ? 0.04 : 0);
+        engineGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+        const nv = gas ? 0.03 + (absSpeed / MAX_SPEED) * 0.02 : (absSpeed > 0.5 ? 0.01 : 0);
+        noiseGain.gain.setTargetAtTime(nv, audioCtx.currentTime, 0.1);
+    }
+
     // Controls state
     let gasPressed = false;
     let brakePressed = false;
@@ -285,11 +342,11 @@
     }
 
     addButtonEvents(document.getElementById('btnGo'),
-        () => gasPressed = true, () => gasPressed = false);
+        () => { initAudio(); gasPressed = true; }, () => gasPressed = false);
     addButtonEvents(document.getElementById('btnBrake'),
-        () => brakePressed = true, () => brakePressed = false);
+        () => { initAudio(); brakePressed = true; }, () => brakePressed = false);
     addButtonEvents(document.getElementById('btnReverse'),
-        () => reversePressed = true, () => reversePressed = false);
+        () => { initAudio(); reversePressed = true; }, () => reversePressed = false);
 
     // Accelerometer
     const tiltPrompt = document.getElementById('tilt-prompt');
@@ -447,6 +504,9 @@
         dirLight.position.set(truck.position.x + 30, 50, truck.position.z + 30);
         dirLight.target.position.copy(truck.position);
         dirLight.target.updateMatrixWorld();
+
+        // Engine sound
+        updateEngineSound(speed, gasPressed || reversePressed);
 
         // HUD
         const displaySpeed = Math.abs(Math.round(speed * 3.6));
