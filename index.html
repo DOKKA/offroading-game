@@ -272,9 +272,14 @@
     }
 
     function handleOrientation(e) {
-        if (e.gamma !== null) {
-            tiltX = THREE.MathUtils.clamp(e.gamma / 30, -1, 1);
-        }
+        if (e.gamma === null) return;
+        const angle = screen.orientation ? screen.orientation.angle : (window.orientation || 0);
+        let steer = 0;
+        if (angle === 0) steer = e.gamma;
+        else if (angle === 90) steer = -e.beta;
+        else if (angle === -90 || angle === 270) steer = e.beta;
+        else if (angle === 180) steer = -e.gamma;
+        tiltX = THREE.MathUtils.clamp(steer / 30, -1, 1);
     }
 
     // Fallback: touch steering on left side of screen
